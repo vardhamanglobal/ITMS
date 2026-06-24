@@ -68,6 +68,15 @@ const DEFAULT_ASSET_TYPES = ["Mobile","Tablet","Laptop","Headphones","CPU","Moni
 const ASSET_STATUS = ["assigned","available","in repair","damaged","retired"];
 const ASSET_CONDITION = ["new","good","fair","poor"];
 
+const USEFUL_LIFE_MONTHS = {Laptop:36,Desktop:48,CPU:48,Mobile:24,Tablet:30,Server:60,Printer:48,Monitor:60,Headphones:24,Webcam:36,Keyboard:36,Mouse:36,UPS:60,Router:48,"Hard Drive":36,"Docking Station":36,"Network Switch":48,AIO:48,Firewall:60,CCTV:48,Modem:48};
+const calcDepreciation = (asset) => {
+  if(!asset.purchaseDate||!asset.purchaseAmount) return null;
+  const months=Math.floor((Date.now()-new Date(asset.purchaseDate).getTime())/(1000*60*60*24*30.44));
+  const life=USEFUL_LIFE_MONTHS[asset.type]||36;
+  const ratio=Math.max(0,1-months/life);
+  return {bookValue:parseFloat(asset.purchaseAmount)*ratio,pct:Math.round(ratio*100),fullyDepreciated:ratio===0};
+};
+
 const SPEC_PRESETS = {
   "Laptop":         ["Processor","RAM","Storage","Display","GPU","OS","Battery"],
   "CPU":            ["Processor","RAM","Storage","Motherboard","GPU","PSU","OS"],
@@ -168,6 +177,7 @@ const fbRefresh = () => {
         carrierBillingDays: cfg.carrierBillingDays || {},
         audit:              fbArr(d.audit),
         appUsers:           fbArr(cfg.appUsers),
+        assetHandovers:     fbArr(d.assetHandovers),
       });
     })
     .catch(e => console.error("Firebase fetch error:", e));
@@ -190,7 +200,8 @@ const gsSave = (action, data) => {
   if (action === "saveSims")   return fbSave("sims",               data);
   if (action === "saveApps")   return fbSave("apps",               data);
   if (action === "saveAssets") return fbSave("assets",             data);
-  if (action === "saveConfig") return fbSave(`config/${data.key}`, data.value);
+  if (action === "saveConfig")    return fbSave(`config/${data.key}`, data.value);
+  if (action === "saveHandovers") return fbSave("assetHandovers",       data);
   console.warn("Unknown action:", action);
 };
 
@@ -1675,6 +1686,106 @@ function SettingsPanel({onClose,
   );
 }
 
+/* ── SPEND TREND CHART ──────────────────────────────────────────── */
+function SpendTrendChart({sims,apps,displayCurrency}){
+  const uc=displayCurrency||"INR";
+  const now=new Date();
+  const months=Array.from({length:6},(_,i)=>{
+    const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+    return{label:d.toLocaleDateString("en-IN",{month:"short",year:"2-digit"}),year:d.getFullYear(),month:d.getMonth()};
+  });
+  const monthlyData=months.map(({year,month})=>{
+    const byCur={};
+    sims.forEach(s=>{
+      if(!s.amount||!s.currency) return;
+      if(s.nextBillingDate){
+        const bd=new Date(s.nextBillingDate);
+        if(year*12+month>=bd.getFullYear()*12+bd.getMonth()) byCur[s.currency]=(byCur[s.currency]||0)+Number(s.amount);
+      } else byCur[s.currency]=(byCur[s.currency]||0)+Number(s.amount);
+    });
+    apps.forEach(a=>{
+      if(!a.amount||!a.currency) return;
+      const seats=a.billingType==="perUser"?(Array.isArray(a.assignedTo)?a.assignedTo.length:1):1;
+      const total=Number(a.amount)*seats;
+      if(a.billingCycle==="yearly"){
+        if(a.nextBillingDate){const bd=new Date(a.nextBillingDate);if(bd.getFullYear()===year&&bd.getMonth()===month) byCur[a.currency]=(byCur[a.currency]||0)+total;}
+      } else {
+        if(a.nextBillingDate){const bd=new Date(a.nextBillingDate);if(year*12+month>=bd.getFullYear()*12+bd.getMonth()) byCur[a.currency]=(byCur[a.currency]||0)+total;}
+        else byCur[a.currency]=(byCur[a.currency]||0)+total;
+      }
+    });
+    return byCur;
+  });
+  const totals=monthlyData.map(byCur=>Object.entries(byCur).reduce((s,[c,v])=>s+convertAmt(v,c,uc),0));
+  const maxTotal=Math.max(...totals,1);
+  const W=540,H=140,PL=8,PR=8,PT=28,PB=24;
+  const chartW=W-PL-PR,chartH=H-PT-PB;
+  const step=chartW/6;
+  const bw=step*0.55;
+  const BARS=["#6366f1","#818cf8","#a5b4fc","#818cf8","#a5b4fc","#818cf8"];
+  if(totals.every(t=>t===0)) return React.createElement("div",{style:{fontSize:12,color:"#94a3b8",fontStyle:"italic",padding:"12px 0"}},"No billing data yet");
+  return React.createElement("div",null,
+    React.createElement("svg",{width:"100%",viewBox:`0 0 ${W} ${H}`,style:{overflow:"visible"}},
+      months.map(({label},i)=>{
+        const barH=Math.max((totals[i]/maxTotal)*chartH,totals[i]>0?4:0);
+        const x=PL+i*step+(step-bw)/2;
+        const y=PT+chartH-barH;
+        const isNow=i===0;
+        return React.createElement("g",{key:label},
+          React.createElement("rect",{x,y,width:bw,height:barH,rx:5,fill:isNow?"#6366f1":"#c7d2fe"}),
+          React.createElement("text",{x:x+bw/2,y:PT+chartH+16,textAnchor:"middle",fontSize:10,fill:"#94a3b8",fontWeight:isNow?700:400},label),
+          totals[i]>0&&React.createElement("text",{x:x+bw/2,y:y-5,textAnchor:"middle",fontSize:9,fill:isNow?"#4f46e5":"#64748b",fontWeight:600},fmtAmt(totals[i],uc))
+        );
+      })
+    ),
+    React.createElement("div",{style:{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}},
+      [...new Set(sims.map(s=>s.currency).concat(apps.map(a=>a.currency)))].filter(c=>monthlyData[0]&&(monthlyData[0][c]||0)>0).map(c=>
+        React.createElement("span",{key:c,style:{fontSize:11,color:"#64748b"}},`${c}: ${fmtAmt(monthlyData[0][c]||0,c)}/mo`)
+      )
+    )
+  );
+}
+
+/* ── HANDOVER LOG MODAL ──────────────────────────────────────────── */
+function HandoverLogModal({assetId,assetName,handovers,onClose}){
+  const logs=[...handovers].filter(h=>h.assetId===assetId).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+  return React.createElement("div",{style:{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(15,23,42,.6)",backdropFilter:"blur(10px)"},onClick:onClose},
+    React.createElement("div",{style:{background:"#fff",borderRadius:16,padding:0,maxWidth:420,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.2)",overflow:"hidden"},onClick:e=>e.stopPropagation()},
+      React.createElement("div",{style:{padding:"20px 24px 16px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:15,fontWeight:800,color:"#0f172a"}},"Handover Log"),
+          React.createElement("div",{style:{fontSize:12,color:"#6366f1",fontWeight:600}},assetName)
+        ),
+        React.createElement("button",{onClick:onClose,style:{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"#f8fafc",cursor:"pointer",fontFamily:"inherit",fontSize:16,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}},"×")
+      ),
+      React.createElement("div",{style:{maxHeight:380,overflowY:"auto",padding:"16px 24px"}},
+        logs.length===0
+          ?React.createElement("div",{style:{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"32px 0",fontStyle:"italic"}},"No handovers recorded yet")
+          :React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:0}},
+            logs.map((h,i)=>React.createElement("div",{key:h.id,style:{display:"flex",gap:14,paddingBottom:i<logs.length-1?16:0}},
+              React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}},
+                React.createElement("div",{style:{width:10,height:10,borderRadius:"50%",background:"#6366f1",border:"2px solid #e0e7ff",marginTop:3,flexShrink:0}}),
+                i<logs.length-1&&React.createElement("div",{style:{width:2,flex:1,background:"#e0e7ff",margin:"4px auto 0",minHeight:20}})
+              ),
+              React.createElement("div",{style:{flex:1,paddingBottom:i<logs.length-1?0:0}},
+                React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
+                  React.createElement("span",{style:{fontSize:12,color:h.from?"#64748b":"#94a3b8",fontStyle:h.from?"normal":"italic"}},h.from||"Unassigned"),
+                  React.createElement("svg",{width:14,height:14,viewBox:"0 0 24 24",fill:"none",stroke:"#94a3b8",strokeWidth:2},React.createElement("path",{strokeLinecap:"round",strokeLinejoin:"round",d:"M5 12h14m-6-6 6 6-6 6"})),
+                  React.createElement("span",{style:{fontSize:12,fontWeight:700,color:h.to?"#0f172a":"#94a3b8",fontStyle:h.to?"normal":"italic"}},h.to||"Unassigned")
+                ),
+                h.toDept&&React.createElement("div",{style:{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:2}},h.toDept),
+                React.createElement("div",{style:{fontSize:10,color:"#94a3b8",marginTop:3}},
+                  new Date(h.ts).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})+" · "+
+                  new Date(h.ts).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true})+" · by "+h.by
+                )
+              )
+            ))
+          )
+      )
+    )
+  );
+}
+
 /* ── QR CODE MODAL ─────────────────────────────────────────────── */
 function AssetQRModal({asset, onClose}){
   if(!asset) return null;
@@ -1871,6 +1982,15 @@ function Dashboard({sims, apps, assets, canEdit, displayCurrency, onAssignSim, o
           </div>
         );
       })()}
+
+      {/* ── Spend Trend Chart ── */}
+      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.05)",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#374151"}}>6-Month Spend Projection</div>
+          <div style={{fontSize:10,color:"#94a3b8"}}>SIMs + App subscriptions</div>
+        </div>
+        <SpendTrendChart sims={sims} apps={apps} displayCurrency={displayCurrency}/>
+      </div>
 
       {/* ── Secondary row: dept chart + asset value ── */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:16,marginBottom:28}}>
@@ -2486,6 +2606,8 @@ function App(){
   const [employees, setEmployees] = useState([]);
 
   const [qrAsset, setQrAsset] = useState(null);
+  const [handovers, setHandovers] = useState([]);
+  const [handoverLogId, setHandoverLogId] = useState(null);
 
   // Toast state
   const [toast, setToast] = useState({msg:"", ok:true});
@@ -2493,6 +2615,7 @@ function App(){
 
   /* UI state */
   const [sSearch,setSSearch]=useState(""); const [sFCarr,setSFCarr]=useState("all"); const [sFStat,setSFStat]=useState("all"); const [sFPay,setSFPay]=useState("all"); const [sFAssign,setSFAssign]=useState("all"); const [sFDept,setSFDept]=useState("all"); const [sFBranch,setSFBranch]=useState("all");
+  const [simCollapsed,setSimCollapsed]=useState({});
   const [sModal,setSModal]=useState(null);
   const [sForm,setSForm]=useState({employee:"",dept:"",branch:"",designation:"",nameOnRecord:"",number:"",carrier:"Jio",planName:"",amount:"",currency:"INR",nextBillingDate:"",status:"active",payment:"paid"});
   const [aSearch,setASearch]=useState(""); const [aFCat,setAFCat]=useState("all"); const [aFPay,setAFPay]=useState("all");
@@ -2542,6 +2665,7 @@ function App(){
         if(data.employees) setEmployees(data.employees);
         if(data.audit) seedAuditCache(data.audit);
         if(data.appUsers) setAppUsers(data.appUsers);
+        if(data.assetHandovers) setHandovers(data.assetHandovers);
 
       } else {
         // Truly first run — seed everything into the Sheet
@@ -2585,8 +2709,9 @@ function App(){
       .then(()=>{ localStorage.setItem("cdAutoSent",todayStr); setAutoSentToday(todayStr); showToast(`Auto-reminder sent to ${reminderEmail}`); })
       .catch(e=>showToast("Email failed: "+(e.text||String(e)),false));
   },[loading,sims,apps,reminderEmail,ejsService,ejsTemplate,ejsKey]);
-  const saveApps   = useCallback((d)=>gsSave("saveApps",   d),[]);
-  const saveAssets = useCallback((d)=>gsSave("saveAssets", d),[]);
+  const saveApps      = useCallback((d)=>gsSave("saveApps",      d),[]);
+  const saveAssets    = useCallback((d)=>gsSave("saveAssets",    d),[]);
+  const saveHandovers = useCallback((d)=>gsSave("saveHandovers", d),[]);
   const saveDepts  = useCallback((d)=>{ try{localStorage.setItem("cd_depts",JSON.stringify(d));}catch(e){} gsSave("saveConfig",{key:"depts",value:d}); },[]);
   const saveBranches = useCallback((d)=>{ try{localStorage.setItem("cd_branches",JSON.stringify(d));}catch(e){} gsSave("saveConfig",{key:"branches",value:d}); },[]);
   const saveDesignations = useCallback((d)=>{ try{localStorage.setItem("cd_designations",JSON.stringify(d));}catch(e){} gsSave("saveConfig",{key:"designations",value:d}); },[]);
@@ -2867,10 +2992,18 @@ function App(){
     if(isNew){
       updated=[...assets,saved];
       auditLog("create","asset",saved.id,saved.name,{},loggedInUser);
+      if(saved.assignedTo){
+        const h={id:`HO-${Date.now()}`,assetId:saved.id,assetName:saved.name,from:"",to:saved.assignedTo,toDept:saved.dept||"",ts:new Date().toISOString(),by:loggedInUser||"unknown"};
+        const uh=[...handovers,h];setHandovers(uh);saveHandovers(uh);
+      }
     } else {
       const changes=diffObjects(astModal,saved,["photos","lastEdited","specs"]);
       updated=assets.map(a=>a.id===astModal.id?saved:a);
       auditLog("update","asset",astModal.id,astModal.name,changes,loggedInUser);
+      if((astModal.assignedTo||"")!==(saved.assignedTo||"")){
+        const h={id:`HO-${Date.now()}`,assetId:saved.id,assetName:saved.name,from:astModal.assignedTo||"",to:saved.assignedTo||"",toDept:saved.dept||"",ts:new Date().toISOString(),by:loggedInUser||"unknown"};
+        const uh=[...handovers,h];setHandovers(uh);saveHandovers(uh);
+      }
     }
     setAssets(updated); saveAssets(updated); setAstModal(null);
   };
@@ -3114,12 +3247,9 @@ function App(){
               <StatCard label="Carriers" val={sStat.carriers} accent="#0284c7"/>
             </div>
 
-            <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
-              <input value={sSearch} onChange={e=>setSSearch(e.target.value)} placeholder="Search employee, carrier, plan, number…" style={{...INP,maxWidth:260}}/>
-              <select value={sFCarr} onChange={e=>setSFCarr(e.target.value)} style={{...SEL,width:"auto",padding:"9px 13px"}}>
-                <option value="all">All Carriers</option>
-                {CARRIERS.map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
+            {/* Filter bar */}
+            <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+              <input value={sSearch} onChange={e=>setSSearch(e.target.value)} placeholder="Search employee, number, plan…" style={{...INP,maxWidth:240,flex:"1 1 180px"}}/>
               <select value={sFStat} onChange={e=>setSFStat(e.target.value)} style={{...SEL,width:"auto",padding:"9px 13px"}}>
                 <option value="all">All Status</option>
                 {["active","suspended","inactive"].map(s=><option key={s} value={s}>{s}</option>)}
@@ -3128,164 +3258,155 @@ function App(){
                 <option value="all">All Payments</option>
                 {["paid","pending","overdue"].map(s=><option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={sFAssign} onChange={e=>setSFAssign(e.target.value)} style={{...SEL,width:"auto",padding:"9px 13px",borderColor:sFAssign!=="all"?"rgba(59,130,246,.5)":"#e2e8f0",color:sFAssign!=="all"?"#2563eb":"#1e293b"}}>
-                <option value="all">All · Assigned &amp; Pool</option>
-                <option value="assigned">✓ Assigned only</option>
-                <option value="unassigned">◆ Unassigned / Pool</option>
-              </select>
               <select value={sFDept} onChange={e=>setSFDept(e.target.value)} style={{...SEL,width:"auto",padding:"9px 13px",borderColor:sFDept!=="all"?"rgba(99,102,241,.5)":"#e2e8f0",color:sFDept!=="all"?"#6366f1":"#1e293b"}}>
                 <option value="all">All Departments</option>
                 {depts.map(d=><option key={d} value={d}>{d}</option>)}
               </select>
-              <select value={sFBranch} onChange={e=>setSFBranch(e.target.value)} style={{...SEL,width:"auto",padding:"9px 13px",borderColor:sFBranch!=="all"?"rgba(14,165,233,.5)":"#e2e8f0",color:sFBranch!=="all"?"#0284c7":"#1e293b"}}>
-                <option value="all">All Branches</option>
-                {branches.map(b=><option key={b} value={b}>{b}</option>)}
-              </select>
-              <span style={{fontSize:12,color:"#94a3b8"}}>{visSims.length}/{sims.length}</span>
+              <span style={{fontSize:12,color:"#94a3b8",marginLeft:"auto"}}>{visSims.length} of {sims.length}</span>
             </div>
 
-
-            {/* SIM Batch action bar */}
+            {/* Batch action bar */}
             {selectedSims.length>0&&(
-              <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,marginBottom:12}}>
-                <span style={{fontSize:13,fontWeight:700,color:"#1d4ed8"}}>{selectedSims.length} SIM{selectedSims.length>1?"s":""} selected</span>
+              <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,marginBottom:14}}>
+                <span style={{fontSize:13,fontWeight:700,color:"#1d4ed8"}}>{selectedSims.length} selected</span>
                 <button onClick={()=>setSelectedSims([])} style={{padding:"4px 10px",background:"none",border:"1px solid #bfdbfe",borderRadius:7,fontSize:12,color:"#64748b",cursor:"pointer",fontFamily:"inherit"}}>Clear</button>
-                <button onClick={()=>setSelectedSims(visSims.map(s=>s.id))} style={{padding:"4px 10px",background:"none",border:"1px solid #bfdbfe",borderRadius:7,fontSize:12,color:"#1d4ed8",cursor:"pointer",fontFamily:"inherit"}}>Select All ({visSims.length})</button>
-                {canEdit&&<button onClick={paySelectedSims} style={{padding:"4px 12px",background:"rgba(52,211,153,.15)",border:"1px solid rgba(52,211,153,.4)",borderRadius:7,fontSize:12,fontWeight:700,color:"#059669",cursor:"pointer",fontFamily:"inherit"}}>✓ Pay Selected</button>}
+                <button onClick={()=>setSelectedSims(visSims.map(s=>s.id))} style={{padding:"4px 10px",background:"none",border:"1px solid #bfdbfe",borderRadius:7,fontSize:12,color:"#1d4ed8",cursor:"pointer",fontFamily:"inherit"}}>Select all ({visSims.length})</button>
+                {canEdit&&<button onClick={paySelectedSims} style={{padding:"4px 12px",background:"rgba(52,211,153,.15)",border:"1px solid rgba(52,211,153,.4)",borderRadius:7,fontSize:12,fontWeight:700,color:"#059669",cursor:"pointer",fontFamily:"inherit"}}>✓ Pay selected</button>}
                 {canEdit&&<ConfirmBtn label={`Delete ${selectedSims.length}`} color="#ef4444" onConfirm={delSelectedSims}/>}
               </div>
             )}
-            <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,.05)"}}>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
-                  <thead>
-                    <tr style={{background:"#f8fafc",borderBottom:"1px solid #e8edf2"}}>
-                      {canEdit&&<th style={{padding:"11px 8px 11px 13px",width:36,minWidth:36}}><input type="checkbox" checked={visSims.length>0&&visSims.every(s=>selectedSims.includes(s.id))} onChange={e=>setSelectedSims(e.target.checked?visSims.map(s=>s.id):[])} style={{cursor:"pointer",accentColor:"#2563eb"}}/></th>}
-                      {["S.No","Employee","Designation","Name on Record","Branch","Number","Carrier","Plan","Amount","Next Billing","Status","Payment",...(canEdit?["Actions"]:[])].map((h,i)=>(
-                        <th key={i} style={{padding:"11px 13px",textAlign:"left",color:"#94a3b8",fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visSims.map((s,idx)=>(
-                      <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:selectedSims.includes(s.id)?"#eff6ff":"transparent"}}>
-                        {canEdit&&<td style={{padding:"12px 8px 12px 13px"}}><input type="checkbox" checked={selectedSims.includes(s.id)} onChange={e=>setSelectedSims(prev=>e.target.checked?[...prev,s.id]:prev.filter(x=>x!==s.id))} style={{cursor:"pointer",accentColor:"#2563eb"}}/></td>}
-                        <td style={{padding:"12px 13px",fontFamily:"'DM Mono',monospace",fontSize:12,color:"#94a3b8",textAlign:"center"}}>{idx+1}</td>
-                        <td style={{padding:"12px 13px"}}>
-                          <div style={{fontWeight:600,color:s.employee?"#0f172a":"#94a3b8",fontStyle:s.employee?"normal":"italic"}}>{s.employee||"— Unassigned —"}</div>
-                          <div style={{fontSize:11,color:"#6366f1",fontWeight:600,marginTop:2}}>{s.dept||""}</div>
-                        </td>
-                        <td style={{padding:"12px 13px",fontSize:12,color:"#475569"}}>{s.designation||<span style={{color:"#cbd5e1"}}>—</span>}</td>
-                        <td style={{padding:"12px 13px"}}>
-                          {s.nameOnRecord
-                            ?<div style={{fontWeight:600,color:"#d97706",fontSize:12}}>{s.nameOnRecord}</div>
-                            :<span style={{color:"#cbd5e1",fontSize:12}}>—</span>}
-                        </td>
-                        <td style={{padding:"12px 13px",fontSize:12,color:"#64748b"}}>{s.branch||<span style={{color:"#cbd5e1"}}>—</span>}</td>
-                        <td style={{padding:"12px 13px",fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,color:"#0f172a",letterSpacing:.5}}>{s.number}</td>
-                        <td style={{padding:"12px 13px",fontWeight:600,color:"#2563eb",fontSize:12}}>{s.carrier}</td>
-                        <td style={{padding:"12px 13px",color:"#475569",fontSize:12}}>{s.planName}</td>
-                        <td style={{padding:"12px 13px"}}>
-                          <div style={{fontFamily:"'DM Mono',monospace",fontWeight:700,color:"#0f172a",fontSize:13}}>{fmtAmt(s.amount,s.currency)}</div>
-                          <div style={{marginTop:3}}><CTag currency={s.currency}/></div>
-                        </td>
-                        <td style={{padding:"12px 13px",fontSize:12,textAlign:"left"}}>{(()=>{
-                          if(!s.nextBillingDate) return <span style={{color:"#cbd5e1"}}>—</span>;
-                          const today=new Date().toISOString().slice(0,10);
-                          const diff=Math.round((new Date(s.nextBillingDate)-new Date(today))/(1000*60*60*24));
-                          const clr=diff<0?"#dc2626":diff<=3?"#d97706":"#374151";
-                          const lbl=diff<0?`${Math.abs(diff)}d overdue`:diff===0?"today":diff<=3?`${diff}d left`:"";
-                          return <div>
-                            <div style={{fontFamily:"'DM Mono',monospace",color:clr,fontWeight:600}}>{fmtDate(s.nextBillingDate)}</div>
-                            {lbl&&<div style={{fontSize:10,color:clr,fontWeight:700,marginTop:1}}>{lbl}</div>}
-                          </div>;
-                        })()}</td>
-                        <td style={{padding:"12px 13px"}}><Pill text={s.status} color={STA_CLR[s.status]||"#94a3b8"}/></td>
-                        <td style={{padding:"12px 13px"}}><Pill text={s.payment} color={PAY_CLR[s.payment]||"#94a3b8"}/></td>
-                        {canEdit&&<td style={{padding:"12px 13px"}}>
-                          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                            <Btn sm onClick={()=>editSim(s)} color="#6366f1">Edit</Btn>
-                            {s.payment!=="paid"&&<Btn sm onClick={()=>paySim(s.id)} color="#34d399">Pay</Btn>}
-                            {s.payment==="paid"&&<Btn sm onClick={()=>unpaySim(s.id)} color="#94a3b8">Unpay</Btn>}
-                            <Btn sm onClick={()=>setSimPayHist({id:s.id,label:s.employee||s.number})} color="#0284c7">History</Btn>
-                            <ConfirmBtn onConfirm={()=>delSim(s.id)}/>
-                          </div>
-                        </td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {visSims.length===0&&<div style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No SIM plans match your filters.</div>}
-            </div>
 
-            {/* Spend by Carrier */}
-            <div style={{marginTop:24}}>
-              <h2 style={{fontSize:13,fontWeight:700,color:"#1e293b",marginBottom:14,textTransform:"uppercase",letterSpacing:.5}}>Spend by Carrier</h2>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
-                {Object.entries(sims.reduce((acc,s)=>{
-                  if(!acc[s.carrier])acc[s.carrier]={};
-                  acc[s.carrier][s.currency]=(acc[s.carrier][s.currency]||0)+s.amount;
-                  return acc;
-                },{})).map(([carrier,byCur])=>{
-                  const carrierSims=sims.filter(s=>s.carrier===carrier);
-                  const unpaidCount=carrierSims.filter(s=>s.payment!=="paid").length;
-                  const allPaid=unpaidCount===0;
-                  return(
-                    <div key={carrier} style={{background:"#f8fafc",border:`1px solid ${allPaid?"#e2e8f0":"#fde68a"}`,borderRadius:12,overflow:"hidden"}}>
-                      {/* Card header */}
-                      <div style={{padding:"14px 16px"}}>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                          <div style={{fontWeight:700,color:"#0f172a",fontSize:13}}>{carrier}</div>
-                          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {/* Carrier-grouped table */}
+            {(()=>{
+              const CARRIER_COLORS=["#6366f1","#0284c7","#10b981","#f59e0b","#ec4899","#8b5cf6","#14b8a6"];
+              const grouped=visSims.reduce((acc,s)=>{if(!acc[s.carrier])acc[s.carrier]=[];acc[s.carrier].push(s);return acc;},{});
+              const carriers=Object.keys(grouped);
+              if(carriers.length===0) return <div style={{padding:60,textAlign:"center",color:"#94a3b8",fontSize:13,background:"#fff",borderRadius:14,border:"1px solid #e2e8f0"}}>No SIM plans match your filters.</div>;
+              const thS={padding:"10px 14px",textAlign:"left",color:"#94a3b8",fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",whiteSpace:"nowrap"};
+              return(
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  {carriers.map((carrier,ci)=>{
+                    const rows=grouped[carrier];
+                    const collapsed=simCollapsed[carrier];
+                    const unpaid=rows.filter(s=>s.payment!=="paid").length;
+                    const allPaid=unpaid===0;
+                    const spend=rows.reduce((acc,s)=>{acc[s.currency]=(acc[s.currency]||0)+s.amount;return acc;},{});
+                    const accentColor=CARRIER_COLORS[ci%CARRIER_COLORS.length];
+                    const allChecked=rows.length>0&&rows.every(s=>selectedSims.includes(s.id));
+                    return(
+                      <div key={carrier} style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+                        {/* Group header */}
+                        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",background:"#f8fafc",borderBottom:collapsed?"none":"1px solid #e2e8f0",cursor:"pointer"}}
+                          onClick={()=>setSimCollapsed(c=>({...c,[carrier]:!c[carrier]}))}>
+                          {/* Collapse chevron */}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                            style={{transition:"transform .2s",transform:collapsed?"rotate(-90deg)":"rotate(0deg)",flexShrink:0}}>
+                            <path d="M6 9l6 6 6-6"/>
+                          </svg>
+                          {/* Carrier accent dot + name */}
+                          <div style={{width:8,height:8,borderRadius:"50%",background:accentColor,flexShrink:0}}/>
+                          <span style={{fontWeight:700,color:"#0f172a",fontSize:14,flex:"0 0 auto"}}>{carrier}</span>
+                          {/* Count badge */}
+                          <span style={{background:accentColor+"18",color:accentColor,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20}}>{rows.length} SIM{rows.length>1?"s":""}</span>
+                          {/* Payment status */}
+                          <span style={{fontSize:12,color:allPaid?"#059669":"#d97706",fontWeight:600}}>
+                            {allPaid?"✓ All paid":`${unpaid} unpaid`}
+                          </span>
+                          {/* Spend totals */}
+                          <div style={{display:"flex",gap:10,marginLeft:4}}>
+                            {Object.entries(spend).map(([cur,val])=>(
+                              <span key={cur} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:"#1e293b"}}>{fmtAmt(val,cur)}</span>
+                            ))}
+                          </div>
+                          {/* Billing day */}
+                          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                             {canEdit&&(
-                              <button onClick={()=>allPaid?unpayCarrier(carrier):payCarrier(carrier)}
-                                style={{padding:"4px 12px",background:allPaid?"#f1f5f9":"#d1fae5",border:`1px solid ${allPaid?"#e2e8f0":"#6ee7b7"}`,borderRadius:7,color:allPaid?"#94a3b8":"#059669",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}>
-                                {allPaid?"○ Mark Unpaid":"✓ Pay All"}
+                              <div style={{display:"flex",alignItems:"center",gap:6}} onClick={e=>e.stopPropagation()}>
+                                <span style={{fontSize:11,color:"#94a3b8"}}>Billing day</span>
+                                <input type="number" min="1" max="28"
+                                  value={carrierBillingDays[carrier]||1}
+                                  onChange={e=>{const v=Math.max(1,Math.min(28,parseInt(e.target.value)||1));const upd={...carrierBillingDays,[carrier]:v};setCarrierBillingDays(upd);saveCarrierBillingDays(upd);}}
+                                  style={{width:44,padding:"4px 6px",borderRadius:7,border:"1px solid #e2e8f0",fontFamily:"'DM Mono',monospace",fontWeight:700,fontSize:12,color:"#1e293b",textAlign:"center",outline:"none"}}
+                                />
+                              </div>
+                            )}
+                            {canEdit&&(
+                              <button onClick={e=>{e.stopPropagation();allPaid?unpayCarrier(carrier):payCarrier(carrier);}}
+                                style={{padding:"5px 14px",background:allPaid?"#f1f5f9":"#d1fae5",border:`1px solid ${allPaid?"#e2e8f0":"#6ee7b7"}`,borderRadius:8,color:allPaid?"#94a3b8":"#059669",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                                {allPaid?"Mark unpaid":"✓ Pay all"}
                               </button>
                             )}
                           </div>
                         </div>
-                        <div style={{fontSize:11,color:"#94a3b8",marginBottom:8}}>
-                          {carrierSims.length} SIM(s) · <span style={{color:allPaid?"#059669":"#d97706",fontWeight:600}}>{allPaid?"All paid":`${unpaidCount} unpaid`}</span>
-                        </div>
-                        {Object.entries(byCur).map(([cur,val])=>(
-                          <div key={cur} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-                            <span style={{fontSize:10,color:"#94a3b8"}}>{cur}</span>
-                            <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,color:"#1e293b",fontSize:13}}>{fmtAmt(val,cur)}</span>
+                        {/* Rows */}
+                        {!collapsed&&(
+                          <div style={{overflowX:"auto"}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                              <thead>
+                                <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                                  {canEdit&&<th style={{...thS,width:36,paddingLeft:18}}>
+                                    <input type="checkbox" checked={allChecked} onChange={e=>setSelectedSims(prev=>e.target.checked?[...new Set([...prev,...rows.map(s=>s.id)])]:prev.filter(id=>!rows.map(s=>s.id).includes(id)))} style={{cursor:"pointer",accentColor:accentColor}}/>
+                                  </th>}
+                                  {["Employee","Number","Plan","Amount","Next Billing","Status","Payment",...(canEdit?["Actions"]:[])].map((h,i)=>(
+                                    <th key={i} style={thS}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rows.map((s,idx)=>{
+                                  const today=new Date().toISOString().slice(0,10);
+                                  const diff=s.nextBillingDate?Math.round((new Date(s.nextBillingDate)-new Date(today))/(86400000)):null;
+                                  const billClr=diff===null?"#cbd5e1":diff<0?"#dc2626":diff<=3?"#d97706":"#374151";
+                                  const billLbl=diff===null?"":diff<0?`${Math.abs(diff)}d overdue`:diff===0?"today":diff<=3?`${diff}d left`:"";
+                                  const isChecked=selectedSims.includes(s.id);
+                                  return(
+                                    <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:isChecked?"#eff6ff":idx%2===0?"#fff":"#fafbff",transition:"background .1s"}}
+                                      onMouseOver={e=>{if(!isChecked)e.currentTarget.style.background="#f0f4ff";}}
+                                      onMouseOut={e=>{if(!isChecked)e.currentTarget.style.background=idx%2===0?"#fff":"#fafbff";}}>
+                                      {canEdit&&<td style={{padding:"11px 8px 11px 18px"}}>
+                                        <input type="checkbox" checked={isChecked} onChange={e=>setSelectedSims(prev=>e.target.checked?[...prev,s.id]:prev.filter(x=>x!==s.id))} style={{cursor:"pointer",accentColor:accentColor}}/>
+                                      </td>}
+                                      <td style={{padding:"11px 14px"}}>
+                                        <div style={{fontWeight:600,color:s.employee?"#0f172a":"#94a3b8",fontStyle:s.employee?"normal":"italic"}}>{s.employee||"Unassigned"}</div>
+                                        {s.dept&&<div style={{fontSize:11,color:accentColor,fontWeight:600,marginTop:1}}>{s.dept}</div>}
+                                      </td>
+                                      <td style={{padding:"11px 14px",fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,color:"#0f172a",letterSpacing:.4}}>{s.number}</td>
+                                      <td style={{padding:"11px 14px",color:"#475569",fontSize:12}}>{s.planName}</td>
+                                      <td style={{padding:"11px 14px"}}>
+                                        <div style={{fontFamily:"'DM Mono',monospace",fontWeight:700,color:"#0f172a",fontSize:13}}>{fmtAmt(s.amount,s.currency)}</div>
+                                        <CTag currency={s.currency}/>
+                                      </td>
+                                      <td style={{padding:"11px 14px"}}>
+                                        {s.nextBillingDate
+                                          ?<><div style={{fontFamily:"'DM Mono',monospace",color:billClr,fontWeight:600,fontSize:12}}>{fmtDate(s.nextBillingDate)}</div>
+                                            {billLbl&&<div style={{fontSize:10,color:billClr,fontWeight:700,marginTop:1}}>{billLbl}</div>}</>
+                                          :<span style={{color:"#cbd5e1"}}>—</span>}
+                                      </td>
+                                      <td style={{padding:"11px 14px"}}><Pill text={s.status} color={STA_CLR[s.status]||"#94a3b8"}/></td>
+                                      <td style={{padding:"11px 14px"}}><Pill text={s.payment} color={PAY_CLR[s.payment]||"#94a3b8"}/></td>
+                                      {canEdit&&<td style={{padding:"11px 14px"}}>
+                                        <div style={{display:"flex",gap:5}}>
+                                          <Btn sm onClick={()=>editSim(s)} color="#6366f1">Edit</Btn>
+                                          {s.payment!=="paid"&&<Btn sm onClick={()=>paySim(s.id)} color="#34d399">Pay</Btn>}
+                                          {s.payment==="paid"&&<Btn sm onClick={()=>unpaySim(s.id)} color="#94a3b8">Unpay</Btn>}
+                                          <Btn sm onClick={()=>setSimPayHist({id:s.id,label:s.employee||s.number})} color="#0284c7">History</Btn>
+                                          <ConfirmBtn onConfirm={()=>delSim(s.id)}/>
+                                        </div>
+                                      </td>}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                        ))}
-                      </div>
-                      {/* Billing day row */}
-                      <div style={{borderTop:"1px solid #f1f5f9",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#fff"}}>
-                        <div>
-                          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>Billing Day</div>
-                          <div style={{fontSize:10,color:"#94a3b8"}}>Day of month auto-advance on pay</div>
-                        </div>
-                        {canEdit?(
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <input
-                              type="number" min="1" max="28"
-                              value={carrierBillingDays[carrier]||1}
-                              onChange={e=>{
-                                const v=Math.max(1,Math.min(28,parseInt(e.target.value)||1));
-                                const upd={...carrierBillingDays,[carrier]:v};
-                                setCarrierBillingDays(upd);
-                                saveCarrierBillingDays(upd);
-                              }}
-                              style={{width:52,padding:"5px 8px",borderRadius:8,border:"1px solid #e2e8f0",fontFamily:"'DM Mono',monospace",fontWeight:700,fontSize:13,color:"#1e293b",textAlign:"center",outline:"none"}}
-                            />
-                            <span style={{fontSize:11,color:"#64748b",fontWeight:600}}>of month</span>
-                          </div>
-                        ):(
-                          <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,fontSize:14,color:"#1e293b"}}>{carrierBillingDays[carrier]||1}<span style={{fontSize:10,color:"#94a3b8",marginLeft:3}}>of month</span></span>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
           </>
         )}
 
@@ -3410,6 +3531,7 @@ function App(){
         {/* ════ ASSETS TAB ════ */}
 
         {qrAsset&&<AssetQRModal asset={qrAsset} onClose={()=>setQrAsset(null)}/>}
+        {handoverLogId&&<HandoverLogModal assetId={handoverLogId} assetName={assets.find(a=>a.id===handoverLogId)?.name||handoverLogId} handovers={handovers} onClose={()=>setHandoverLogId(null)}/>}
         {tab==="assets"&&(
           <>
             <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:24,gap:16,flexWrap:"wrap"}}>
@@ -3525,6 +3647,7 @@ function App(){
                         {h:"Serial No / IMEI",w:130},
                         {h:"Purchase Price",w:120},
                         {h:`≈ ${CURRENCY_SYMBOLS[displayCurrency]||displayCurrency} (${displayCurrency})`,w:110},
+                        {h:"Book Value",w:110},
                         {h:"Assigned To",w:140},
                         {h:"Branch",w:100},
                         {h:"Notes",w:160},
@@ -3590,6 +3713,14 @@ function App(){
                               );
                             })()}
                           </td>
+                          <td style={{padding:"12px 13px"}}>
+                            {(()=>{
+                              const dep=calcDepreciation(a);
+                              if(!dep) return <span style={{color:"#cbd5e1",fontSize:12}}>—</span>;
+                              if(dep.fullyDepreciated) return <div><div style={{fontFamily:"'DM Mono',monospace",fontWeight:600,color:"#94a3b8",fontSize:12}}>{fmtAmt(0,a.currency)}</div><div style={{fontSize:10,color:"#dc2626",fontWeight:600}}>Fully depr.</div></div>;
+                              return <div><div style={{fontFamily:"'DM Mono',monospace",fontWeight:600,color:"#059669",fontSize:12}}>{fmtAmt(dep.bookValue,a.currency)}</div><div style={{fontSize:10,color:"#64748b"}}>{dep.pct}% remaining</div></div>;
+                            })()}
+                          </td>
                           <td style={{padding:"12px 13px"}}>{a.assignedTo?<div><div style={{fontWeight:600,color:"#0f172a",fontSize:12}}>{a.assignedTo}</div><div style={{fontSize:11,color:"#6366f1",fontWeight:600}}>{a.dept}</div>{a.designation&&<div style={{fontSize:10,color:"#94a3b8"}}>{a.designation}</div>}</div>:<span style={{color:"#cbd5e1",fontSize:12}}>Unassigned</span>}</td>
                           <td style={{padding:"12px 13px",fontSize:12,color:"#64748b"}}>{a.branch||<span style={{color:"#cbd5e1"}}>—</span>}</td>
                           <td style={{padding:"12px 13px",maxWidth:220}}>
@@ -3603,6 +3734,7 @@ function App(){
                                 {canEdit&&<><button onClick={()=>editAsset(a)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Edit</button><ConfirmBtn onConfirm={()=>delAsset(a.id)}/></>}
                                 <button onClick={()=>setQrAsset(a)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>QR</button>
                                 <button onClick={()=>setAstHistoryId(a.id)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>History</button>
+                                <button onClick={()=>setHandoverLogId(a.id)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#10b981";e.currentTarget.style.color="#10b981";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Log</button>
                               </div>
                               {(()=>{
                                 // Show last edit info from audit log
