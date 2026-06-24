@@ -1,0 +1,27 @@
+*{box-sizing:border-box;margin:0;padding:0}
+  html,body,#root{height:100%;min-height:100%}
+  body{background:#f5f7fa;font-family:'Inter','DM Sans',sans-serif;color:#1a202c;min-height:100vh;-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+  tbody tr:hover td{background:#f7fafc!important;transition:background .1s}
+  th{font-size:11px;font-weight:700;color:#718096;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+  td{vertical-align:middle}
+  input,select,textarea{font-family:'Inter','DM Sans',sans-serif}
+  input::placeholder{color:#a0aec0}
+  select option{background:#fff;color:#1a202c}
+  button{font-family:'Inter','DM Sans',sans-serif}
+  h1,h2,h3{letter-spacing:-.3px}
+
+  body{-webkit-app-region:no-drag;user-select:none}
+  input,textarea,select{user-select:text;-webkit-user-select:text}
+
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes lgBlink{0%,85%,100%{opacity:1}92%{opacity:.2}}
+  @keyframes lgFloat{0%{transform:translateY(0)}100%{transform:translateY(-8px)}}
+  @keyframes lgFadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+  @keyframes lgSlideRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}

@@ -1,0 +1,8 @@
+node_modules/
+.npm-cache/
+dist/
+.env
+.env.*
+config.js
+public/config.js
+vite-dev*.log
