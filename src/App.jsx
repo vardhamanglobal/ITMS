@@ -519,11 +519,12 @@ function FR({label,children}){
 function StatCard({label,val,accent,sub}){
   const isLong = typeof val==="string" && val.length > 14;
   return(
-    <div style={{background:"#fff",border:"1px solid #e8edf2",borderRadius:12,padding:"16px 18px",
-      borderLeft:`3px solid ${accent}`,boxShadow:"0 1px 6px rgba(0,0,0,.06)",animation:"fadeIn .3s ease"}}>
-      <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>{label}</div>
-      <div style={{fontSize:isLong?12:24,fontWeight:800,color:"#0f172a",fontFamily:"'DM Mono',monospace",lineHeight:isLong?1.6:1.2,wordBreak:"break-word",letterSpacing:isLong?0:-.5}}>{val}</div>
-      {sub&&<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>{sub}</div>}
+    <div style={{background:"#fff",border:"1px solid #e8edf2",borderRadius:12,padding:"16px 20px",
+      borderTop:`3px solid ${accent}`,boxShadow:"0 2px 8px rgba(0,0,0,.06)",animation:"fadeIn .3s ease",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:-14,right:-14,width:52,height:52,borderRadius:"50%",background:accent+"10"}}/>
+      <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,letterSpacing:.6,textTransform:"uppercase",marginBottom:8}}>{label}</div>
+      <div style={{fontSize:isLong?12:22,fontWeight:800,color:"#0f172a",fontFamily:"'DM Mono',monospace",lineHeight:isLong?1.6:1.1,wordBreak:"break-word",letterSpacing:isLong?0:-.3}}>{val}</div>
+      {sub&&<div style={{fontSize:10,color:"#94a3b8",marginTop:5}}>{sub}</div>}
     </div>
   );
 }
@@ -1965,18 +1966,24 @@ function Dashboard({sims, apps, assets, canEdit, displayCurrency, onAssignSim, o
         });
         const spendLines=Object.entries(byCur).filter(([,v])=>v>0).map(([c,v])=>fmtAmt(v,c)).join("  ·  ")||"—";
         const kpis=[
-          {label:"Total Assets",val:assets.length,sub:`${assets.filter(a=>a.status==="assigned").length} assigned · ${assets.filter(a=>a.status!=="assigned").length} available`,accent:"#6366f1"},
-          {label:"Active SIMs",val:sims.filter(s=>s.status==="active").length,sub:`${sims.length} total plans`,accent:"#0284c7"},
-          {label:"App Subscriptions",val:apps.length,sub:`${apps.reduce((n,a)=>n+(Array.isArray(a.assignedTo)?a.assignedTo.length:1),0)} total seats`,accent:"#10b981"},
-          {label:"Monthly Spend",val:spendLines,sub:"SIMs + apps combined",accent:"#f59e0b",mono:true},
+          {label:"Total Assets",val:assets.length,sub:`${assets.filter(a=>a.status==="assigned").length} assigned · ${assets.filter(a=>a.status!=="assigned").length} available`,accent:"#6366f1",icon:"M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"},
+          {label:"Active SIMs",val:sims.filter(s=>s.status==="active").length,sub:`${sims.length} total plans`,accent:"#0284c7",icon:"M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"},
+          {label:"App Subscriptions",val:apps.length,sub:`${apps.reduce((n,a)=>n+(Array.isArray(a.assignedTo)?a.assignedTo.length:1),0)} total seats`,accent:"#10b981",icon:"M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"},
+          {label:"Monthly Spend",val:spendLines,sub:"SIMs + apps combined",accent:"#f59e0b",mono:true,icon:"M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"},
         ];
         return(
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:20}}>
-            {kpis.map(({label,val,sub,accent,mono})=>(
-              <div key={label} style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"20px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.05)",borderTop:`3px solid ${accent}`}}>
-                <div style={{fontSize:11,fontWeight:600,color:"#94a3b8",letterSpacing:.3,marginBottom:10,textTransform:"uppercase"}}>{label}</div>
-                <div style={{fontSize:mono?16:26,fontWeight:800,color:"#0f172a",fontFamily:mono?"'DM Mono',monospace":"inherit",letterSpacing:mono?-.3:-.5,lineHeight:1.1,marginBottom:6}}>{val}</div>
-                <div style={{fontSize:11,color:"#94a3b8"}}>{sub}</div>
+            {kpis.map(({label,val,sub,accent,mono,icon})=>(
+              <div key={label} style={{background:"#fff",border:"1px solid #e8edf2",borderRadius:14,padding:"20px 22px",boxShadow:"0 2px 8px rgba(0,0,0,.06)",borderTop:`3px solid ${accent}`,position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:-16,right:-16,width:72,height:72,borderRadius:"50%",background:accent+"12"}}/>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <div style={{width:30,height:30,borderRadius:9,background:accent+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d={icon}/></svg>
+                  </div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:.4,textTransform:"uppercase"}}>{label}</div>
+                </div>
+                <div style={{fontSize:mono?14:28,fontWeight:800,color:"#0f172a",fontFamily:mono?"'DM Mono',monospace":"inherit",letterSpacing:mono?-.2:-.8,lineHeight:1,marginBottom:6}}>{val}</div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>{sub}</div>
               </div>
             ))}
           </div>
@@ -1984,22 +1991,25 @@ function Dashboard({sims, apps, assets, canEdit, displayCurrency, onAssignSim, o
       })()}
 
       {/* ── Spend Trend Chart ── */}
-      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.05)",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:14}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#374151"}}>6-Month Spend Projection</div>
-          <div style={{fontSize:10,color:"#94a3b8"}}>SIMs + App subscriptions</div>
+      <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"20px 24px",boxShadow:"0 2px 8px rgba(0,0,0,.05)",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:2}}>6-Month Spend Projection</div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>SIMs + App subscriptions · recurring amounts</div>
+          </div>
+          <div style={{padding:"4px 10px",background:"#f0f4ff",borderRadius:20,fontSize:10,color:"#6366f1",fontWeight:700,letterSpacing:.3}}>PROJECTED</div>
         </div>
         <SpendTrendChart sims={sims} apps={apps} displayCurrency={displayCurrency}/>
       </div>
 
       {/* ── Secondary row: dept chart + asset value ── */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:16,marginBottom:28}}>
-        <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:14}}>Assets by Department</div>
+        <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"20px 24px",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:14}}>Assets by Department</div>
           <DeptBarChart assets={assets}/>
         </div>
-        <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>Total Asset Value</div>
+        <div style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:14,padding:"20px 24px",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:2}}>Total Asset Value</div>
           <div style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>All assets · converted to {uc}</div>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:32,fontWeight:800,color:"#0f172a",letterSpacing:-.5,lineHeight:1}}>
             {fmtAmt(totalAssetValueConverted, uc)}
@@ -3583,15 +3593,20 @@ function App(){
 
                   const assigned=assets.filter(a=>a.type===type&&a.assignedTo).length;
                   const available=count-assigned;
+                  const pct=count>0?Math.round((assigned/count)*100):0;
                   return(
-                    <div key={type} style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
-                        <div style={{fontWeight:700,color:"#0f172a",fontSize:13,lineHeight:1.2}}>{type}</div>
+                    <div key={type} style={{background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow .15s",cursor:"default"}}
+                      onMouseOver={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(99,102,241,.1)"}
+                      onMouseOut={e=>e.currentTarget.style.boxShadow="none"}>
+                      <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:.4,marginBottom:6}}>{type}</div>
+                      <div style={{fontFamily:"'DM Mono',monospace",fontSize:26,fontWeight:800,color:"#0f172a",letterSpacing:-1,lineHeight:1,marginBottom:8}}>{count}</div>
+                      <div style={{height:4,background:"#f1f5f9",borderRadius:99,overflow:"hidden",marginBottom:8}}>
+                        <div style={{height:"100%",width:pct+"%",background:"#6366f1",borderRadius:99,transition:"width .3s"}}/>
                       </div>
-                      <div style={{fontFamily:"'DM Mono',monospace",fontSize:28,fontWeight:800,color:"#1e293b",letterSpacing:-1,lineHeight:1}}>{count}</div>
-                      <div style={{display:"flex",gap:8,marginTop:2}}>
-                        <span style={{fontSize:10,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:5,padding:"2px 7px",color:"#15803d",fontWeight:600}}>{assigned} assigned</span>
-                        <span style={{fontSize:10,background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:5,padding:"2px 7px",color:"#1d4ed8",fontWeight:600}}>{available} free</span>
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:10,color:"#059669",fontWeight:700}}>{assigned} in use</span>
+                        <span style={{fontSize:10,color:"#64748b",fontWeight:600}}>{pct}%</span>
+                        <span style={{fontSize:10,color:"#0284c7",fontWeight:700}}>{available} free</span>
                       </div>
                     </div>
                   );
@@ -3652,7 +3667,7 @@ function App(){
                         {h:"Branch",w:100},
                         {h:"Notes",w:160},
                         {h:"Status",w:90},
-                        ...(canEdit?[{h:"Actions",w:120}]:[])
+                        {h:"",w:canEdit?210:120},
                       ].map(({h,w})=>(
                         <th key={h||"icon"} style={{padding:"11px 13px",textAlign:"left",color:"#94a3b8",fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:"uppercase",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap",minWidth:w,width:w}}>{h}</th>
                       ))}
@@ -3664,9 +3679,11 @@ function App(){
                       const STAT_CLR2={assigned:"#059669",available:"#2563eb","in repair":"#d97706",damaged:"#dc2626",retired:"#94a3b8"};
 
                       return(
-                        <tr key={a.id} style={{borderBottom:"1px solid #f8fafc"}}>
-                          {canEdit&&<td style={{padding:"10px 0 10px 13px",width:36,minWidth:36,verticalAlign:"middle"}}>
-                            <input type="checkbox" checked={selectedAssets.includes(a.id)} onChange={e=>setSelectedAssets(e.target.checked?[...selectedAssets,a.id]:selectedAssets.filter(id=>id!==a.id))} style={{cursor:"pointer",accentColor:"#2563eb"}}/>
+                        <tr key={a.id} style={{borderBottom:"1px solid #f1f5f9",transition:"background .1s"}}
+                          onMouseOver={e=>e.currentTarget.style.background="#f8faff"}
+                          onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                          {canEdit&&<td style={{padding:"8px 0 8px 13px",width:36,minWidth:36,verticalAlign:"middle"}}>
+                            <input type="checkbox" checked={selectedAssets.includes(a.id)} onChange={e=>setSelectedAssets(e.target.checked?[...selectedAssets,a.id]:selectedAssets.filter(id=>id!==a.id))} style={{cursor:"pointer",accentColor:"#6366f1"}}/>
                           </td>}
                           <td style={{padding:"12px 13px",fontFamily:"'DM Mono',monospace",fontSize:11,color:"#94a3b8",width:80,minWidth:80}}>
                             <div>{a.id}</div>
@@ -3729,33 +3746,24 @@ function App(){
                               :<span style={{fontSize:12,color:"#cbd5e1"}}>—</span>}
                           </td>
                           <td style={{padding:"12px 13px"}}><Pill text={a.status} color={STAT_CLR2[a.status]||"#94a3b8"}/></td>
-                          <td style={{padding:"12px 13px"}}>
-                              <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
-                                {canEdit&&<><button onClick={()=>editAsset(a)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Edit</button><ConfirmBtn onConfirm={()=>delAsset(a.id)}/></>}
-                                <button onClick={()=>setQrAsset(a)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>QR</button>
-                                <button onClick={()=>setAstHistoryId(a.id)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#667eea";e.currentTarget.style.color="#667eea";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>History</button>
-                                <button onClick={()=>setHandoverLogId(a.id)} style={{padding:"4px 10px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}} onMouseOver={e=>{e.currentTarget.style.borderColor="#10b981";e.currentTarget.style.color="#10b981";}} onMouseOut={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Log</button>
+                          <td style={{padding:"10px 13px",verticalAlign:"middle"}}>
+                              <div style={{display:"flex",gap:3,flexWrap:"nowrap",alignItems:"center"}}>
+                                {canEdit&&<><button onClick={()=>editAsset(a)} style={{padding:"4px 9px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}} onMouseOver={e=>{e.currentTarget.style.background="#f0f4ff";e.currentTarget.style.borderColor="#6366f1";e.currentTarget.style.color="#6366f1";}} onMouseOut={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Edit</button><ConfirmBtn onConfirm={()=>delAsset(a.id)}/></>}
+                                <button onClick={()=>setQrAsset(a)} title="Show QR code" style={{padding:"4px 9px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}} onMouseOver={e=>{e.currentTarget.style.background="#f0f4ff";e.currentTarget.style.borderColor="#6366f1";e.currentTarget.style.color="#6366f1";}} onMouseOut={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>QR</button>
+                                <button onClick={()=>setAstHistoryId(a.id)} title="Edit history" style={{padding:"4px 9px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}} onMouseOver={e=>{e.currentTarget.style.background="#f0f4ff";e.currentTarget.style.borderColor="#6366f1";e.currentTarget.style.color="#6366f1";}} onMouseOut={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Hist</button>
+                                <button onClick={()=>setHandoverLogId(a.id)} title="Handover log" style={{padding:"4px 9px",background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}} onMouseOver={e=>{e.currentTarget.style.background="#f0fdf4";e.currentTarget.style.borderColor="#10b981";e.currentTarget.style.color="#10b981";}} onMouseOut={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#374151";}}>Log</button>
                               </div>
                               {(()=>{
-                                // Show last edit info from audit log
-                                const assetHistory = getAuditLog().filter(e=>e.entityType==="asset"&&e.entityId===a.id&&e.action==="update").slice(0,1);
-                                const lastEntry = assetHistory[0];
-                                if(!lastEntry && !a.lastEdited) return null;
-                                const who = lastEntry ? (lastEntry.user||"unknown") : (a.lastEditedBy||"unknown");
-                                const when = lastEntry ? lastEntry.ts : a.lastEdited;
-                                const changedFields = lastEntry ? fmtChanges(lastEntry.changes).map(c=>c.field) : [];
-                                const d = when ? new Date(when) : null;
-                                const dateStr = d ? d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}) : "";
-                                const timeStr = d ? d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:false}) : "";
-                                return(
-                                  <div title={`Last edited by ${who} on ${dateStr} ${timeStr}`}
-                                    style={{marginTop:5,padding:"4px 7px",background:"#f8fafc",border:"1px solid #e8edf4",borderRadius:6,fontSize:9,color:"#64748b",lineHeight:1.4}}>
-                                    <span style={{color:"#6366f1",fontWeight:700}}>{who}</span>
-                                    <span style={{color:"#94a3b8",margin:"0 3px"}}>·</span>
-                                    <span>{dateStr} {timeStr}</span>
-                                    {changedFields.length>0&&<div style={{color:"#94a3b8",marginTop:1,fontSize:8}}>{changedFields.slice(0,3).join(", ")}{changedFields.length>3?` +${changedFields.length-3} more`:""}</div>}
-                                  </div>
-                                );
+                                const lastEntry=getAuditLog().filter(e=>e.entityType==="asset"&&e.entityId===a.id&&e.action==="update")[0];
+                                if(!lastEntry&&!a.lastEdited) return null;
+                                const who=lastEntry?(lastEntry.user||"?"):(a.lastEditedBy||"?");
+                                const when=lastEntry?lastEntry.ts:a.lastEdited;
+                                const d=when?new Date(when):null;
+                                const dateStr=d?d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}):"";
+                                const timeStr=d?d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:false}):"";
+                                return <div title={`Last edited by ${who} on ${dateStr} ${timeStr}`} style={{marginTop:5,fontSize:9,color:"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:200}}>
+                                  <span style={{color:"#6366f1",fontWeight:700}}>{who}</span> · {dateStr}
+                                </div>;
                               })()}
                             </td>
                         </tr>
